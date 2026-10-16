@@ -7,6 +7,11 @@ import { deleteModelFiles, getModelState, modelFile, setEngineState } from '@/li
 // One instance for the whole app, so the model is never loaded twice (Q-03).
 const llm = createLLM();
 let loading: Promise<void> | null = null;
+// A fresh load starts with an empty chat, so the next reply must give the engine the turns again.
+let chatLost = false;
+
+/** One turn of the chat, in the bridge's format for `resetConversation()`. */
+export type Turn = { role: 'user' | 'model'; content: string };
 
 /** Load the model if it is not loaded yet. Resolves when done; failures show in the model state. */
 export function ensureLoaded(): Promise<void> {
@@ -23,9 +28,12 @@ export function ensureLoaded(): Promise<void> {
     .loadModel(decodeURI(modelFile.uri.replace('file://', '')), {
       backend: 'cpu',
       multimodal: true,
+      // Prompt, earlier turns, and answer together. The chat limit in chat.ts keeps turns well under it.
+      maxContextTokens: 4096,
     })
     .then(() => {
       console.log(`[engine] load done in ${Date.now() - start} ms`);
+      chatLost = true;
       setEngineState({ engine: 'ready', engineError: null });
     })
     .catch((e) => {
@@ -43,14 +51,30 @@ export function ensureLoaded(): Promise<void> {
   return loading;
 }
 
-/** Stream an answer to `text`. Loads the model first if needed (life cycle: Unloaded → Loading). */
-export async function reply(text: string, onToken: (token: string) => void) {
+/**
+ * Stream an answer to `text`. Loads the model first if needed (life cycle: Unloaded → Loading).
+ * The engine keeps its own chat. It is given `turns` again when `reseed` is set (the chat was
+ * cut to the limit) or when a reload emptied it.
+ */
+export async function reply(
+  text: string,
+  onToken: (token: string) => void,
+  turns: Turn[],
+  reseed: boolean,
+) {
   if (getModelState().engine !== 'ready') await ensureLoaded();
   if (getModelState().engine !== 'ready') throw new Error('Model not ready');
+  if (reseed || chatLost) llm.resetConversation(JSON.stringify(turns));
+  chatLost = false;
   // Log timings only, never the question or the answer.
   const start = Date.now();
   await llm.sendMessageAsync(text, (token) => onToken(token));
   console.log(`[engine] reply done in ${Date.now() - start} ms`);
+}
+
+/** Clear the engine's chat for a new chat. Not loaded: the next load starts empty anyway. */
+export function resetChat() {
+  if (getModelState().engine === 'ready') llm.resetConversation();
 }
 
 /** Free the model's memory. It loads again the next time it is needed. */

@@ -18,7 +18,7 @@ import { Markdown } from '@/components/markdown';
 import { Notice } from '@/components/notice';
 import { Radius, Spacing, TouchTarget, Type } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { type Message, send, useChat } from '@/lib/chat';
+import { type Message, newChat, send, useChat } from '@/lib/chat';
 import { modelStatus, useModel } from '@/lib/model';
 
 export default function ChatScreen() {
@@ -72,7 +72,12 @@ export default function ChatScreen() {
           ),
           headerRight: () => (
             <View style={styles.headerActions}>
-              <IconButton icon="add-comment" label="New chat" disabled />
+              <IconButton
+                icon="add-comment"
+                label="New chat"
+                disabled={busy || messages.length === 0}
+                onPress={newChat}
+              />
               <IconButton
                 icon="settings"
                 label="Settings"

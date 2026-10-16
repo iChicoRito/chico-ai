@@ -6,12 +6,16 @@ import { useColorScheme } from 'react-native';
 import { Colors, Type } from '@/constants/theme';
 import { ensureLoaded } from '@/lib/engine';
 import { useModel } from '@/lib/model';
+import { clearPictureCache } from '@/lib/picture';
 
 export default function RootLayout() {
   const scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
   const c = Colors[scheme];
   const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
   const { stage } = useModel();
+
+  // Chats are not saved, so picture copies left by a closed or killed app are not needed (R-31).
+  useEffect(() => clearPictureCache(), []);
 
   // Load the model on opening, and right after a fresh install passes the check (R-14).
   useEffect(() => {

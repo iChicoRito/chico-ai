@@ -1,5 +1,5 @@
 // Picture questions: pick one picture and prepare a small, upright copy for the engine.
-import { File } from 'expo-file-system';
+import { Directory, File, Paths } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { launchImageLibraryAsync } from 'expo-image-picker';
 
@@ -46,6 +46,19 @@ export function deletePicture(uri: string) {
     if (file.exists) file.delete();
   } catch {
     // Nothing to clean up.
+  }
+}
+
+/** Delete every picture copy, for leftovers from an app that was closed or killed (R-31). */
+export function clearPictureCache() {
+  // Where the picker and the manipulator write their copies (checked on the phone).
+  for (const name of ['ImagePicker', 'ImageManipulator']) {
+    try {
+      const dir = new Directory(Paths.cache, name);
+      if (dir.exists) dir.delete();
+    } catch {
+      // Nothing to clean up.
+    }
   }
 }
 

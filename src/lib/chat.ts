@@ -3,6 +3,7 @@ import { useSyncExternalStore } from 'react';
 
 import { reply, resetChat, stopReply, type Turn } from '@/lib/engine';
 import { getModelState } from '@/lib/model';
+import { deletePicture } from '@/lib/picture';
 
 export type Message = {
   id: string;
@@ -118,8 +119,10 @@ async function answer(userId: string, text: string, picture: string | null) {
     update(modelId, { status: result });
   } catch (e) {
     update(userId, { status: 'done' });
-    // The engine's message stays in the log; the screen gets plain words.
-    console.log(`[chat] reply failed: ${e instanceof Error ? e.message : String(e)}`);
+    // The engine's message stays in the log, without file paths (it names the picture file); the
+    // screen gets plain words.
+    const message = e instanceof Error ? e.message : String(e);
+    console.log(`[chat] reply failed: ${message.replace(/\/data\/\S+/g, '<file>')}`);
     update(modelId, { status: 'failed', error: 'The answer could not be written. Try again.' });
   } finally {
     set({ busy: false });
@@ -147,6 +150,8 @@ function recentTurns(limit: number, skip: string[]): Turn[] {
 /** Start fresh: clear the messages and what the AI remembers (R-24). Stops an answer first. */
 export async function newChat() {
   await stop();
+  // The bubbles showed the picture copies; with the chat gone they are not needed (R-31).
+  state.messages.forEach((m) => m.picture && deletePicture(m.picture));
   set({ messages: [] });
   engineChars = 0;
   resetChat();

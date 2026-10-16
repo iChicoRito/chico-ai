@@ -55,6 +55,7 @@ export function ensureLoaded(): Promise<void> {
  * Stream an answer to `text`. Loads the model first if needed (life cycle: Unloaded → Loading).
  * The engine keeps its own chat. It is given `turns` again when `reseed` is set (the chat was
  * cut to the limit) or when a reload emptied it.
+ * Resolves 'stopped' when Stop or a low-memory unload cut the answer short (Q-02).
  */
 export async function reply(
   text: string,
@@ -77,9 +78,14 @@ export async function reply(
   } catch (e) {
     // A stopped or failed answer leaves the engine's chat unknown: give it the turns next time.
     chatLost = true;
+    // Stop and a low-memory unload both cancel the engine, which ends the answer with
+    // "Task cancelled". The bridge may unload by itself before unloadModel() runs, so the
+    // message is the only reliable sign. The written part stays, marked as stopped (Q-02).
+    if (String(e instanceof Error ? e.message : e).includes('Task cancelled')) return 'stopped';
     throw e;
   }
   console.log(`[engine] reply done in ${Date.now() - start} ms`);
+  return 'done';
 }
 
 /**

@@ -69,14 +69,12 @@ export function retry() {
 /** Stop the answer being written. The written part stays, marked as stopped (R-20). */
 export async function stop() {
   if (!state.busy) return;
-  stopping = true;
   stopReply();
   await current;
 }
 
 // The answer being written, so stop() can wait for it to settle.
 let current: Promise<void> = Promise.resolve();
-let stopping = false;
 
 async function answer(userId: string, text: string) {
   const modelId = String(nextId++);
@@ -100,7 +98,7 @@ async function answer(userId: string, text: string) {
     const turns = recentTurns(reseed ? CHAT_LIMIT_CHARS / 2 : CHAT_LIMIT_CHARS, [userId, modelId]);
     if (reseed) engineChars = turns.reduce((n, t) => n + t.content.length, 0);
 
-    await reply(
+    const result = await reply(
       text,
       (token) => {
         written += token;
@@ -111,19 +109,13 @@ async function answer(userId: string, text: string) {
     );
     engineChars += text.length + written.length;
     update(userId, { status: 'done' });
-    update(modelId, { status: 'done' });
+    update(modelId, { status: result });
   } catch (e) {
     update(userId, { status: 'done' });
-    // Stop cancels the engine, which ends the reply with "Task cancelled": that is not a failure.
-    if (stopping) {
-      update(modelId, { status: 'stopped' });
-    } else {
-      // The engine's message stays in the log; the screen gets plain words.
-      console.log(`[chat] reply failed: ${e instanceof Error ? e.message : String(e)}`);
-      update(modelId, { status: 'failed', error: 'The answer could not be written. Try again.' });
-    }
+    // The engine's message stays in the log; the screen gets plain words.
+    console.log(`[chat] reply failed: ${e instanceof Error ? e.message : String(e)}`);
+    update(modelId, { status: 'failed', error: 'The answer could not be written. Try again.' });
   } finally {
-    stopping = false;
     set({ busy: false });
   }
 }

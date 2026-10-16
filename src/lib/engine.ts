@@ -43,6 +43,16 @@ export function ensureLoaded(): Promise<void> {
   return loading;
 }
 
+/** Stream an answer to `text`. Loads the model first if needed (life cycle: Unloaded → Loading). */
+export async function reply(text: string, onToken: (token: string) => void) {
+  if (getModelState().engine !== 'ready') await ensureLoaded();
+  if (getModelState().engine !== 'ready') throw new Error('Model not ready');
+  // Log timings only, never the question or the answer.
+  const start = Date.now();
+  await llm.sendMessageAsync(text, (token) => onToken(token));
+  console.log(`[engine] reply done in ${Date.now() - start} ms`);
+}
+
 /** Free the model's memory. It loads again the next time it is needed. */
 export async function unloadModel() {
   if (loading) await loading;

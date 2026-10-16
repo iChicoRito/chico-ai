@@ -6,9 +6,11 @@ import { IconButton } from '@/components/icon-button';
 import { Notice } from '@/components/notice';
 import { Radius, Spacing, TouchTarget, Type } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { modelStatus, useModel } from '@/lib/model';
 
 export default function ChatScreen() {
   const c = useTheme();
+  const model = useModel();
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
@@ -17,7 +19,7 @@ export default function ChatScreen() {
           headerTitle: () => (
             <View>
               <Text style={[Type.title, { color: c.text }]}>Pocket AI</Text>
-              <Text style={[Type.label, { color: c.textMuted }]}>Model not installed</Text>
+              <Text style={[Type.label, { color: c.textMuted }]}>{modelStatus(model)}</Text>
             </View>
           ),
           headerRight: () => (
@@ -41,11 +43,13 @@ export default function ChatScreen() {
       </View>
 
       <View style={styles.bottom}>
-        <Notice
-          message="The AI model is not on this phone yet."
-          actionLabel="Set up"
-          onAction={() => router.push('/model-setup')}
-        />
+        {model.stage !== 'installed' ? (
+          <Notice
+            message="The AI model is not on this phone yet."
+            actionLabel="Set up"
+            onAction={() => router.push('/model-setup')}
+          />
+        ) : null}
         <View style={[styles.composer, { backgroundColor: c.surface }]}>
           <IconButton icon="add-photo-alternate" label="Attach a picture" disabled />
           <TextInput

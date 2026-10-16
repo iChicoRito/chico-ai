@@ -9,6 +9,7 @@
     "userInterfaceStyle": "automatic",
     "android": {
       "package": "com.chicoai.pocketai",
+      "allowBackup": false,
       "adaptiveIcon": {
         "backgroundColor": "#131314",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

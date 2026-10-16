@@ -1,13 +1,22 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { Colors, Type } from '@/constants/theme';
+import { ensureLoaded } from '@/lib/engine';
+import { useModel } from '@/lib/model';
 
 export default function RootLayout() {
   const scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
   const c = Colors[scheme];
   const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
+  const { stage } = useModel();
+
+  // Load the model on opening, and right after a fresh install passes the check (R-14).
+  useEffect(() => {
+    if (stage === 'installed') ensureLoaded();
+  }, [stage]);
 
   return (
     <ThemeProvider

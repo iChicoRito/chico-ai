@@ -10,6 +10,10 @@
     "android": {
       "package": "com.chicoai.pocketai",
       "allowBackup": false,
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#131314",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -41,7 +45,15 @@
         }
       ],
       "expo-font",
-      "react-native-litert-lm"
+      "react-native-litert-lm",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": false,
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

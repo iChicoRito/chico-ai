@@ -62,6 +62,7 @@ export async function reply(
   onToken: (token: string) => void,
   turns: Turn[],
   reseed: boolean,
+  picture: string | null = null,
 ) {
   if (getModelState().engine !== 'ready') await ensureLoaded();
   if (getModelState().engine !== 'ready') throw new Error('Model not ready');
@@ -72,9 +73,15 @@ export async function reply(
   try {
     // The last piece (done) is empty, or "Error: …" when the answer fails or is stopped
     // (StreamingCallbackListener.kt). The error also rejects the promise, so drop that piece.
-    await llm.sendMessageAsync(text, (token, done) => {
+    const onPiece = (token: string, done: boolean) => {
       if (!done) onToken(token);
-    });
+    };
+    if (picture) {
+      // The bridge wants a plain file path, as for the model file.
+      await llm.sendMessageWithImageAsync(text, decodeURI(picture.replace('file://', '')), onPiece);
+    } else {
+      await llm.sendMessageAsync(text, onPiece);
+    }
   } catch (e) {
     // A stopped or failed answer leaves the engine's chat unknown: give it the turns next time.
     chatLost = true;

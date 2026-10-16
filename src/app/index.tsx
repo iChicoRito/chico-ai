@@ -4,6 +4,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRef, useState } from 'react';
 import {
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Pressable,
   StyleSheet,
@@ -21,12 +22,17 @@ import { useTheme } from '@/hooks/use-theme';
 import { type Message, newChat, retry, send, stop, useChat } from '@/lib/chat';
 import { ensureLoaded } from '@/lib/engine';
 import { modelStatus, useModel } from '@/lib/model';
+import { deletePicture, pickPicture } from '@/lib/picture';
 
 export default function ChatScreen() {
   const c = useTheme();
   const model = useModel();
   const { messages, busy } = useChat();
   const [text, setText] = useState('');
+  // The prepared copy of the attached picture, while it is being made, and why it was refused.
+  const [picture, setPicture] = useState<string | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const [pictureError, setPictureError] = useState<string | null>(null);
   const list = useRef<FlatList<Message>>(null);
   // The list is inverted, so offset 0 is the newest message.
   const [awayFromLatest, setAwayFromLatest] = useState(false);
@@ -35,10 +41,32 @@ export default function ChatScreen() {
   const loading = installed && model.engine === 'loading';
   const canSend = installed && !loading && !busy && text.trim().length > 0;
 
+  const onAttach = async () => {
+    setPictureError(null);
+    setPreparing(true);
+    try {
+      const next = await pickPicture();
+      if (!next) return;
+      if (picture) deletePicture(picture);
+      setPicture(next);
+    } catch (e) {
+      setPictureError(e instanceof Error ? e.message : 'This picture could not be opened. Try another one.');
+    } finally {
+      setPreparing(false);
+    }
+  };
+
+  const onRemovePicture = () => {
+    if (picture) deletePicture(picture);
+    setPicture(null);
+    setPictureError(null);
+  };
+
   const onSend = () => {
     if (!canSend) return;
-    send(text);
+    send(text, picture);
     setText('');
+    setPicture(null);
   };
 
   const renderMessage = ({ item }: { item: Message }) => {
@@ -46,8 +74,9 @@ export default function ChatScreen() {
       return (
         <View
           accessible
-          accessibilityLabel={`You: ${item.text}`}
+          accessibilityLabel={`${item.picture ? 'You, with a picture' : 'You'}: ${item.text}`}
           style={[styles.userBubble, { backgroundColor: c.surface }]}>
+          {item.picture ? <Image source={{ uri: item.picture }} style={styles.bubblePicture} /> : null}
           <Text style={[Type.body, { color: c.text }]}>{item.text}</Text>
         </View>
       );
@@ -144,8 +173,26 @@ export default function ChatScreen() {
 
         <View style={styles.bottom}>
           <StatusNotice />
+          {preparing ? <Notice message="Preparing picture…" /> : null}
+          {pictureError ? <Notice tone="error" message={pictureError} /> : null}
+          {picture ? (
+            <View style={styles.preview}>
+              <Image
+                accessible
+                accessibilityLabel="Attached picture"
+                source={{ uri: picture }}
+                style={[styles.thumbnail, { backgroundColor: c.surface }]}
+              />
+              <IconButton icon="close" label="Remove picture" onPress={onRemovePicture} />
+            </View>
+          ) : null}
           <View style={[styles.composer, { backgroundColor: c.surface }]}>
-            <IconButton icon="add-photo-alternate" label="Attach a picture" disabled />
+            <IconButton
+              icon="add-photo-alternate"
+              label="Attach a picture"
+              disabled={!installed || busy || preparing}
+              onPress={onAttach}
+            />
             <TextInput
               accessibilityLabel="Message"
               editable={installed}
@@ -232,6 +279,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
   },
+  bubblePicture: { width: 200, height: 200, borderRadius: Radius.md, marginBottom: Spacing.sm },
   modelMessage: { gap: Spacing.sm },
   jump: {
     position: 'absolute',
@@ -247,6 +295,8 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   bottom: { padding: Spacing.md, gap: Spacing.md },
+  preview: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  thumbnail: { width: 72, height: 72, borderRadius: Radius.sm },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',

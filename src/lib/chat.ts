@@ -8,6 +8,8 @@ export type Message = {
   id: string;
   role: 'user' | 'model';
   text: string;
+  /** The prepared picture copy sent with a question; null for answers and text-only questions. */
+  picture: string | null;
   status: 'pending' | 'writing' | 'done' | 'stopped' | 'failed';
   error: string | null;
 };
@@ -43,7 +45,7 @@ export function useChat(): ChatState {
   );
 }
 
-export function send(input: string) {
+export function send(input: string, picture: string | null = null) {
   const text = input.trim();
   // Busy is set before any await, so fast repeated taps send one message (R-19).
   if (!text || state.busy) return;
@@ -51,9 +53,12 @@ export function send(input: string) {
   const userId = String(nextId++);
   set({
     busy: true,
-    messages: [...state.messages, { id: userId, role: 'user', text, status: 'pending', error: null }],
+    messages: [
+      ...state.messages,
+      { id: userId, role: 'user', text, picture, status: 'pending', error: null },
+    ],
   });
-  current = answer(userId, text);
+  current = answer(userId, text, picture);
 }
 
 /** Ask again after a failed answer, without showing the question twice (R-21). */
@@ -63,7 +68,7 @@ export function retry() {
   if (state.busy || last?.status !== 'failed' || question?.role !== 'user') return;
 
   set({ busy: true, messages: state.messages.slice(0, -1) });
-  current = answer(question.id, question.text);
+  current = answer(question.id, question.text, question.picture);
 }
 
 /** Stop the answer being written. The written part stays, marked as stopped (R-20). */
@@ -76,12 +81,12 @@ export async function stop() {
 // The answer being written, so stop() can wait for it to settle.
 let current: Promise<void> = Promise.resolve();
 
-async function answer(userId: string, text: string) {
+async function answer(userId: string, text: string, picture: string | null) {
   const modelId = String(nextId++);
   set({
     messages: [
       ...state.messages,
-      { id: modelId, role: 'model', text: '', status: 'writing', error: null },
+      { id: modelId, role: 'model', text: '', picture: null, status: 'writing', error: null },
     ],
   });
 
@@ -106,6 +111,7 @@ async function answer(userId: string, text: string) {
       },
       turns,
       reseed,
+      picture,
     );
     engineChars += text.length + written.length;
     update(userId, { status: 'done' });
@@ -132,7 +138,8 @@ function recentTurns(limit: number, skip: string[]): Turn[] {
     chars += q.text.length + a.text.length;
     if (chars > limit) break;
     turns.unshift({ role: 'model', content: a.text });
-    turns.unshift({ role: 'user', content: q.text });
+    // The engine cannot be given old pictures again, so say one was there.
+    turns.unshift({ role: 'user', content: q.picture ? `[Picture] ${q.text}` : q.text });
   }
   return turns;
 }

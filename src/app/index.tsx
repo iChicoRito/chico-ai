@@ -19,6 +19,7 @@ import { Notice } from '@/components/notice';
 import { Radius, Spacing, TouchTarget, Type } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { type Message, newChat, retry, send, stop, useChat } from '@/lib/chat';
+import { ensureLoaded } from '@/lib/engine';
 import { modelStatus, useModel } from '@/lib/model';
 
 export default function ChatScreen() {
@@ -31,7 +32,8 @@ export default function ChatScreen() {
   const [awayFromLatest, setAwayFromLatest] = useState(false);
   const headerHeight = useHeaderHeight();
   const installed = model.stage === 'installed';
-  const canSend = installed && !busy && text.trim().length > 0;
+  const loading = installed && model.engine === 'loading';
+  const canSend = installed && !loading && !busy && text.trim().length > 0;
 
   const onSend = () => {
     if (!canSend) return;
@@ -53,6 +55,9 @@ export default function ChatScreen() {
     return (
       <View style={styles.modelMessage}>
         {item.text ? <Markdown value={item.text} /> : null}
+        {item.status === 'stopped' ? (
+          <Text style={[Type.label, { color: c.textMuted }]}>Stopped</Text>
+        ) : null}
         {item.status === 'failed' && item.error ? (
           <Notice
             tone="error"
@@ -73,7 +78,7 @@ export default function ChatScreen() {
           headerTitle: () => (
             <View>
               <Text style={[Type.title, { color: c.text }]}>Pocket AI</Text>
-              <Text style={[Type.label, { color: c.textMuted }]}>{modelStatus(model)}</Text>
+              <Text style={[Type.label, { color: c.textMuted }]}>{busy && !loading ? 'Writing…' : modelStatus(model)}</Text>
             </View>
           ),
           headerRight: () => (
@@ -138,13 +143,7 @@ export default function ChatScreen() {
         )}
 
         <View style={styles.bottom}>
-          {!installed ? (
-            <Notice
-              message="The AI model is not on this phone yet."
-              actionLabel="Set up"
-              onAction={() => router.push('/model-setup')}
-            />
-          ) : null}
+          <StatusNotice />
           <View style={[styles.composer, { backgroundColor: c.surface }]}>
             <IconButton icon="add-photo-alternate" label="Attach a picture" disabled />
             <TextInput
@@ -173,6 +172,47 @@ export default function ChatScreen() {
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
+}
+
+/**
+ * What the model is doing, when it is not simply ready (R-23).
+ * Unloaded needs no notice: sending a question loads it again.
+ */
+function StatusNotice() {
+  const model = useModel();
+  const openSetup = () => router.push('/model-setup');
+
+  if (model.stage === 'notInstalled') {
+    return (
+      <Notice
+        message="The AI model is not on this phone yet."
+        actionLabel="Set up"
+        onAction={openSetup}
+      />
+    );
+  }
+  if (model.stage !== 'installed') {
+    return (
+      <Notice
+        tone={model.stage === 'failed' ? 'error' : 'info'}
+        message={`Model setup: ${modelStatus(model)}.`}
+        actionLabel="View"
+        onAction={openSetup}
+      />
+    );
+  }
+  if (model.engine === 'loading') return <Notice message="Loading the model…" />;
+  if (model.engine === 'failed' && model.engineError) {
+    return (
+      <Notice
+        tone="error"
+        message={model.engineError}
+        actionLabel="Try again"
+        onAction={ensureLoaded}
+      />
+    );
+  }
+  return null;
 }
 
 const styles = StyleSheet.create({

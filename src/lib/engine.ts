@@ -68,8 +68,28 @@ export async function reply(
   chatLost = false;
   // Log timings only, never the question or the answer.
   const start = Date.now();
-  await llm.sendMessageAsync(text, (token) => onToken(token));
+  try {
+    // The last piece (done) is empty, or "Error: …" when the answer fails or is stopped
+    // (StreamingCallbackListener.kt). The error also rejects the promise, so drop that piece.
+    await llm.sendMessageAsync(text, (token, done) => {
+      if (!done) onToken(token);
+    });
+  } catch (e) {
+    // A stopped or failed answer leaves the engine's chat unknown: give it the turns next time.
+    chatLost = true;
+    throw e;
+  }
   console.log(`[engine] reply done in ${Date.now() - start} ms`);
+}
+
+/**
+ * Stop the answer being written. `resetConversation()` cancels the engine (needs the PR #26
+ * fix in `patches/`); the running reply then rejects with "Task cancelled".
+ */
+export function stopReply() {
+  if (getModelState().engine !== 'ready') return;
+  llm.resetConversation();
+  console.log('[engine] reply stopped');
 }
 
 /** Clear the engine's chat for a new chat. Not loaded: the next load starts empty anyway. */

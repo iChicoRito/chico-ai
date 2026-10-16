@@ -18,7 +18,7 @@ import { Markdown } from '@/components/markdown';
 import { Notice } from '@/components/notice';
 import { Radius, Spacing, TouchTarget, Type } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { type Message, newChat, send, useChat } from '@/lib/chat';
+import { type Message, newChat, retry, send, stop, useChat } from '@/lib/chat';
 import { modelStatus, useModel } from '@/lib/model';
 
 export default function ChatScreen() {
@@ -54,7 +54,13 @@ export default function ChatScreen() {
       <View style={styles.modelMessage}>
         {item.text ? <Markdown value={item.text} /> : null}
         {item.status === 'failed' && item.error ? (
-          <Notice tone="error" message={item.error} />
+          <Notice
+            tone="error"
+            message={item.error}
+            // Only the newest answer can be tried again.
+            actionLabel={item.id === messages.at(-1)?.id ? 'Try again' : undefined}
+            onAction={retry}
+          />
         ) : null}
       </View>
     );
@@ -75,8 +81,12 @@ export default function ChatScreen() {
               <IconButton
                 icon="add-comment"
                 label="New chat"
-                disabled={busy || messages.length === 0}
-                onPress={newChat}
+                disabled={messages.length === 0}
+                onPress={() => {
+                  // The old list's scroll position goes with it.
+                  setAwayFromLatest(false);
+                  newChat();
+                }}
               />
               <IconButton
                 icon="settings"
@@ -147,13 +157,17 @@ export default function ChatScreen() {
               placeholderTextColor={c.textMuted}
               style={[Type.body, styles.input, { color: c.text }]}
             />
-            <IconButton
-              icon="arrow-upward"
-              label="Send"
-              filled
-              disabled={!canSend}
-              onPress={onSend}
-            />
+            {busy ? (
+              <IconButton icon="stop" label="Stop" filled onPress={stop} />
+            ) : (
+              <IconButton
+                icon="arrow-upward"
+                label="Send"
+                filled
+                disabled={!canSend}
+                onPress={onSend}
+              />
+            )}
           </View>
         </View>
       </KeyboardAvoidingView>

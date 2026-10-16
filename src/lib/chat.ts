@@ -1,7 +1,7 @@
 // Chat controller: keeps the messages and sends questions to the engine connector.
 import { useSyncExternalStore } from 'react';
 
-import { reply, resetChat, type Turn } from '@/lib/engine';
+import { reply, resetChat, stopReply, type Turn } from '@/lib/engine';
 import { getModelState } from '@/lib/model';
 
 export type Message = {
@@ -43,22 +43,51 @@ export function useChat(): ChatState {
   );
 }
 
-export async function send(input: string) {
+export function send(input: string) {
   const text = input.trim();
   // Busy is set before any await, so fast repeated taps send one message (R-19).
   if (!text || state.busy) return;
 
   const userId = String(nextId++);
-  const modelId = String(nextId++);
   set({
     busy: true,
+    messages: [...state.messages, { id: userId, role: 'user', text, status: 'pending', error: null }],
+  });
+  current = answer(userId, text);
+}
+
+/** Ask again after a failed answer, without showing the question twice (R-21). */
+export function retry() {
+  const last = state.messages.at(-1);
+  const question = state.messages.at(-2);
+  if (state.busy || last?.status !== 'failed' || question?.role !== 'user') return;
+
+  set({ busy: true, messages: state.messages.slice(0, -1) });
+  current = answer(question.id, question.text);
+}
+
+/** Stop the answer being written. The written part stays, marked as stopped (R-20). */
+export async function stop() {
+  if (!state.busy) return;
+  stopping = true;
+  stopReply();
+  await current;
+}
+
+// The answer being written, so stop() can wait for it to settle.
+let current: Promise<void> = Promise.resolve();
+let stopping = false;
+
+async function answer(userId: string, text: string) {
+  const modelId = String(nextId++);
+  set({
     messages: [
       ...state.messages,
-      { id: userId, role: 'user', text, status: 'pending', error: null },
       { id: modelId, role: 'model', text: '', status: 'writing', error: null },
     ],
   });
 
+  let written = '';
   try {
     if (getModelState().stage !== 'installed') {
       update(userId, { status: 'done' });
@@ -71,25 +100,30 @@ export async function send(input: string) {
     const turns = recentTurns(reseed ? CHAT_LIMIT_CHARS / 2 : CHAT_LIMIT_CHARS, [userId, modelId]);
     if (reseed) engineChars = turns.reduce((n, t) => n + t.content.length, 0);
 
-    let answer = '';
     await reply(
       text,
       (token) => {
-        answer += token;
-        update(modelId, { text: answer });
+        written += token;
+        update(modelId, { text: written });
       },
       turns,
       reseed,
     );
-    engineChars += text.length + answer.length;
+    engineChars += text.length + written.length;
     update(userId, { status: 'done' });
     update(modelId, { status: 'done' });
   } catch (e) {
-    // The engine's message stays in the log; the screen gets plain words.
-    console.log(`[chat] reply failed: ${e instanceof Error ? e.message : String(e)}`);
     update(userId, { status: 'done' });
-    update(modelId, { status: 'failed', error: 'The answer could not be written. Try again.' });
+    // Stop cancels the engine, which ends the reply with "Task cancelled": that is not a failure.
+    if (stopping) {
+      update(modelId, { status: 'stopped' });
+    } else {
+      // The engine's message stays in the log; the screen gets plain words.
+      console.log(`[chat] reply failed: ${e instanceof Error ? e.message : String(e)}`);
+      update(modelId, { status: 'failed', error: 'The answer could not be written. Try again.' });
+    }
   } finally {
+    stopping = false;
     set({ busy: false });
   }
 }
@@ -111,9 +145,9 @@ function recentTurns(limit: number, skip: string[]): Turn[] {
   return turns;
 }
 
-/** Start fresh: clear the messages and what the AI remembers (R-24). */
-export function newChat() {
-  if (state.busy) return;
+/** Start fresh: clear the messages and what the AI remembers (R-24). Stops an answer first. */
+export async function newChat() {
+  await stop();
   set({ messages: [] });
   engineChars = 0;
   resetChat();
